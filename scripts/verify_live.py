@@ -10,7 +10,6 @@
 
 用法:  python scripts/verify_live.py
 """
-import asyncio
 import sys
 from pathlib import Path
 

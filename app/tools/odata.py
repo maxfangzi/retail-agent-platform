@@ -4,7 +4,6 @@
 每个函数都是一个 Agent 可调用的工具（MCP 风格：输入输出都是结构化的 dict，
 带明确的错误语义）。所有函数只读，绝不写库——Agent 工具的第一安全原则。
 """
-from pathlib import Path
 from typing import Any
 
 import pandas as pd

@@ -36,7 +36,6 @@ def _fake_graph(text_after_tool: str = "退款工单已处理完毕，请注意�
             "id": "call_1",
         }],
     )
-    from langchain_core.prompts import ChatPromptTemplate
 
     fake = GenericFakeChatModel(messages=iter([tool_call, AIMessage(content=text_after_tool)]))
     tool_node = graph_mod.ToolNode(graph_mod.ALL_TOOLS)
