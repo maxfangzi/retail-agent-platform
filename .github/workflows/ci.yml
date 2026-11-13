@@ -42,7 +42,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Ruff (light: syntax + unused imports)
+      - name: Ruff (syntax + unused imports)
         run: |
           pip install ruff
           ruff check app scripts tests --select F,E9
