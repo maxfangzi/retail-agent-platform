@@ -1,0 +1,42 @@
+# 企业级编排：默认只起 API；加 --profile tracing 同时起 Langfuse 自托管观测栈
+services:
+  api:
+    build: .
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      # 数据与向量库挂到宿主机，重建容器不丢库
+      - ./data:/app/data
+      - ./chroma_db:/app/chroma_db
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  langfuse-db:
+    image: postgres:16-alpine
+    profiles: ["tracing"]
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_pgdata:/var/lib/postgresql/data
+
+  langfuse:
+    image: langfuse/langfuse:2
+    profiles: ["tracing"]
+    depends_on:
+      - langfuse-db
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: change-me-in-production
+      SALT: change-me-too
+      TELEMETRY_ENABLED: "false"
+
+volumes:
+  langfuse_pgdata:

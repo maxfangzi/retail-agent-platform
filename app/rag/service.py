@@ -5,6 +5,7 @@
       回复 + 引用列表。检索分数过低时明确说"不知道"，不编造——
       这是与玩具 demo 的核心区别。
 """
+from app.core.tracing import trace_rag_answer
 from app.llm import client as llm
 from app.rag import store
 
@@ -18,12 +19,7 @@ NO_ANSWER = "这个问题超出了我的知识范围，已为您转接人工客�
 MIN_SCORE = 0.35  # 检索相似度低于此值视为知识库无答案
 
 
-def answer(question: str) -> dict:
-    """回答一个客服问题。返回 {'answer', 'sources', 'retrieved'}。"""
-    hits = store.retrieve(question, top_k=4)
-    if not hits or hits[0]["score"] < MIN_SCORE:
-        return {"answer": NO_ANSWER, "sources": [], "retrieved": hits}
-
+def _do_answer(question: str, hits: list[dict]) -> dict:
     context = "\n\n".join(
         f"[资料{i+1}] ({h['file']} / {h['section']})\n{h['text']}"
         for i, h in enumerate(hits)
@@ -40,3 +36,12 @@ def answer(question: str) -> dict:
         "usage": data.get("usage"),
         "cost_usd": round(llm.cost_of(data), 6),
     }
+
+
+def answer(question: str) -> dict:
+    """回答一个客服问题。返回 {'answer', 'sources', 'retrieved'}。"""
+    hits = store.retrieve(question, top_k=4)
+    if not hits or hits[0]["score"] < MIN_SCORE:
+        no_hit = {"answer": NO_ANSWER, "sources": [], "retrieved": hits}
+        return trace_rag_answer(question, lambda: no_hit)
+    return trace_rag_answer(question, lambda: _do_answer(question, hits))
