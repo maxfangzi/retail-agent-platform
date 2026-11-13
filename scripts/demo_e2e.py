@@ -41,8 +41,20 @@ def main() -> None:
 
     # ③ Agent 工具调用（查真实订单）
     section("③ LangGraph Agent 查真实订单")
-    demo_order = "99a478866da877444aa38b616f029de8"
-    print(f"工具直查 {demo_order}:", odata.query_order(demo_order))
+    # 动态取订单：④演示要触发退款审核，优先挑"真实超期"的 shipped 订单
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(settings.database_url)
+    with engine.connect() as conn:
+        demo_order = conn.execute(text(
+            "SELECT order_id FROM olist_orders WHERE order_status='shipped' "
+            "ORDER BY order_estimated_delivery_date LIMIT 1"
+        )).scalar()
+        fallback = conn.execute(text(
+            "SELECT order_id FROM olist_orders WHERE order_status='delivered' LIMIT 1"
+        )).scalar()
+    demo_order = demo_order or fallback
+    print(f"示例订单 {demo_order}:", odata.query_order(demo_order))
 
     # ④ Human-in-the-loop：退款 interrupt → 人工批准
     section("④ 退款工单：Agent 发起 -> interrupt 暂停 -> 人工批准 -> 恢复")
