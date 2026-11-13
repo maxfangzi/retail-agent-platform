@@ -1,0 +1,23 @@
+# ---- secrets: never commit ----
+.env
+
+# ---- python ----
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# ---- data & artifacts (large / private) ----
+data/raw/
+data/processed/
+*.db
+*.sqlite3
+chroma_db/
+langfuse_*/
+
+# ---- editors / os ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
