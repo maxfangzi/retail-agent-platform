@@ -23,25 +23,53 @@ def _embedder() -> SentenceTransformer:
 
 
 def chunk_markdown(path: Path) -> list[dict]:
-    """按 '## ' 标题把 Markdown 切成语义完整的块。"""
+    """两级切块：先按 '## ' 标题切，FAQ 类段落再按 '- **问题**' 切成单问答块。
+
+    单问题块让每个 Q&A 独立可检索，避免大段落稀释向量语义（评测发现的真实问题）。
+    """
     lines = path.read_text(encoding="utf-8").splitlines()
-    chunks: list[dict] = []
+    raw: list[tuple[str, list[str]]] = []
     title = path.stem
     current: list[str] = []
     for line in lines:
         if line.startswith("## ") and current:
-            chunks.append({"file": path.name, "section": title, "text": "\n".join(current).strip()})
+            raw.append((title, current))
             title = line.removeprefix("## ").strip()
             current = []
         current.append(line)
     if any(s.strip() for s in current):
-        chunks.append({"file": path.name, "section": title, "text": "\n".join(current).strip()})
-    return [c for c in chunks if c["text"]]
+        raw.append((title, current))
+
+    chunks: list[dict] = []
+    for section, sec_lines in raw:
+        qa_blocks: list[list[str]] = []
+        buf: list[str] = []
+        for line in sec_lines:
+            if line.lstrip().startswith("- **") and buf:
+                qa_blocks.append(buf)
+                buf = []
+            buf.append(line)
+        if buf:
+            qa_blocks.append(buf)
+        if len(qa_blocks) > 1:  # 有多个问答块：每块带小节标题独立入库
+            for i, block in enumerate(qa_blocks):
+                text = "\n".join(block).strip()
+                if text:
+                    chunks.append({"file": path.name, "section": f"{section}#{i+1}", "text": text})
+        else:
+            text = "\n".join(sec_lines).strip()
+            if text:
+                chunks.append({"file": path.name, "section": section, "text": text})
+    return chunks
+
+
+CHUNKER_VERSION = "v2-qa-split"  # 切块逻辑变了要升版本，否则指纹不变、索引不会重建
 
 
 def build_fingerprint() -> str:
-    """所有知识文件的联合指纹：文件内容变了才重建索引。"""
+    """切块器版本 + 所有知识文件内容的联合指纹：任一变化即重建索引。"""
     h = hashlib.sha256()
+    h.update(CHUNKER_VERSION.encode())
     for p in sorted(KNOWLEDGE_DIR.glob("*.md")):
         h.update(p.read_bytes())
     return h.hexdigest()[:12]
