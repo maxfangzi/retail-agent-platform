@@ -5,7 +5,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 from pydantic_settings import BaseSettings
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# config.py 位于 app/core/ 下，向上三级才是项目根
+BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(BASE_DIR / ".env")
 
 
@@ -20,7 +21,8 @@ class Settings(BaseSettings):
     embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
     # --- 数据库 ---
-    database_url: str = f"sqlite:///{BASE_DIR / 'data' / 'agent_platform.db'}"
+    # 注意：SQLite URL 必须用正斜杠（Windows 反斜杠 + 中文路径会解析失败）
+    database_url: str = f"sqlite:///{(BASE_DIR / 'data' / 'agent_platform.db').as_posix()}"
 
     # --- Langfuse tracing（留空=关闭）---
     langfuse_public_key: str = ""
