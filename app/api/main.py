@@ -12,7 +12,7 @@ import json
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from app.agent.graph import APP
+from app.agent.graph import get_app, tool_source
 from app.core.config import settings
 from app.guardrails.pii import detect_injection, mask_pii
 from app.rag import service as rag_service
@@ -39,6 +39,7 @@ def health() -> dict:
         "status": "ok",
         "llm_configured": bool(settings.mistral_api_key),
         "tracing": "langfuse" if settings.langfuse_public_key else "off",
+        "agent_tool_source": tool_source(),
     }
 
 
@@ -65,12 +66,13 @@ class AgentReviewIn(BaseModel):
     note: str = ""
 
 
-def _run_agent(message: str, thread_id: str):
-    """跑一轮 Agent 图。返回 (最终回复文本, 待审批payload或None)。"""
+async def _run_agent(message: str, thread_id: str):
+    """跑一轮 Agent 图（async：MCP 工具只支持异步）。返回 (最终回复文本, 待审批payload或None)。"""
     from langgraph.types import Command
 
+    graph = await get_app()
     cfg = {"configurable": {"thread_id": thread_id}}
-    state = APP.invoke({"messages": [{"role": "user", "content": message}]}, cfg)
+    state = await graph.ainvoke({"messages": [{"role": "user", "content": message}]}, cfg)
     pending = None
     interrupts = state.get("__interrupt__") or []
     if interrupts:
@@ -84,22 +86,23 @@ def _run_agent(message: str, thread_id: str):
 
 
 @app.post("/agent/chat")
-def agent_chat(body: AgentChatIn) -> dict:
+async def agent_chat(body: AgentChatIn) -> dict:
     """Agent 对话。若触发退款等敏感操作，返回 pending_review 让人工处理。"""
     injected, _ = detect_injection(body.message)
     if injected:
         raise HTTPException(status_code=400, detail="消息包含疑似注入内容，已拦截")
-    reply, pending = _run_agent(mask_pii(body.message), body.thread_id)
-    return {"reply": reply, "pending_review": pending, "thread_id": body.thread_id}
+    reply, pending = await _run_agent(mask_pii(body.message), body.thread_id)
+    return {"reply": reply, "pending_review": pending, "thread_id": body.thread_id, "tool_source": tool_source()}
 
 
 @app.post("/agent/review")
-def agent_review(body: AgentReviewIn) -> dict:
+async def agent_review(body: AgentReviewIn) -> dict:
     """人工审批接口：恢复被 interrupt 暂停的图，Agent 拿到审批结果后继续。"""
     from langgraph.types import Command
 
+    graph = await get_app()
     cfg = {"configurable": {"thread_id": body.thread_id}}
-    state = APP.invoke(Command(resume={"approved": body.approved, "note": body.note}), cfg)
+    state = await graph.ainvoke(Command(resume={"approved": body.approved, "note": body.note}), cfg)
     interrupts = state.get("__interrupt__") or []
     if interrupts:
         return {"reply": "仍有待审批事项。", "pending_review": interrupts[0].value}

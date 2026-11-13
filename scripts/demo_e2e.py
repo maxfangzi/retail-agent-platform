@@ -4,12 +4,13 @@
 前置: .env 已填 MISTRAL_API_KEY；数据库和向量索引已建（见 README）。
 用法: .venv\\Scripts\\python.exe scripts\\demo_e2e.py
 """
+import asyncio
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.agent.graph import APP  # noqa: E402
+from app.agent.graph import get_app  # noqa: E402
 from app.core.config import settings  # noqa: E402
 from app.guardrails.pii import detect_injection, mask_pii  # noqa: E402
 from app.rag import service as rag  # noqa: E402
@@ -22,7 +23,7 @@ def section(title: str) -> None:
     print(f"\n{'=' * 60}\n  {title}\n{'=' * 60}")
 
 
-def main() -> None:
+async def main() -> None:
     if not settings.mistral_api_key:
         sys.exit("未配置 MISTRAL_API_KEY：请把 key 填进 .env 后重跑。")
 
@@ -59,14 +60,15 @@ def main() -> None:
     # ④ Human-in-the-loop：退款 interrupt → 人工批准
     section("④ 退款工单：Agent 发起 -> interrupt 暂停 -> 人工批准 -> 恢复")
     cfg = {"configurable": {"thread_id": "demo-thread"}}
-    state = APP.invoke(
+    app = await get_app()
+    state = await app.ainvoke(
         {"messages": [{"role": "user", "content": f"订单 {demo_order} 超期未送达，我要退款"}]},
         cfg,
     )
     if state.get("__interrupt__"):
         payload = state["__interrupt__"][0].value
         print(f"Agent 发起退款，已暂停等待人工审核: {payload}")
-        final = APP.invoke(Command(resume={"approved": True, "note": "演示：已核实超期"}), cfg)
+        final = await app.ainvoke(Command(resume={"approved": True, "note": "演示：已核实超期"}), cfg)
         print(f"批准后 Agent 最终回复: {final['messages'][-1].content}")
         print("工单已写入 data/review_queue/，打开看一眼即可。")
     else:
@@ -75,4 +77,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

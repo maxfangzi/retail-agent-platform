@@ -10,7 +10,9 @@
   等人工通过 API 批准/驳回后才继续 —— human-in-the-loop；
 - 所有工具只读或"写待审核队列"，Agent 无权直接改库 —— 最小权限原则。
 """
+import asyncio
 import json
+import sys
 import time
 from pathlib import Path
 from typing import Annotated, Any
@@ -92,19 +94,22 @@ SYSTEM_PROMPT = """你是电商平台"智购"的售后客服 Agent。工作守�
 5. 回答礼貌、简洁、专业，用客户提问的语言回复。"""
 
 
-def build_graph():
-    """构建客服 Agent 图。返回编译好的 (app, checkpointer)。"""
+def build_graph(tools: list):
+    """构建客服 Agent 图（工具从外部传入）。返回编译好的 (app, checkpointer)。
+
+    async 设计：MCP 适配器工具只支持异步调用，图节点和调用方全程 async。
+    """
     llm = ChatMistralAI(
         model=settings.llm_model_fast,
         temperature=0.2,
         api_key=settings.mistral_api_key or "unset",
     )
-    llm_with_tools = llm.bind_tools(ALL_TOOLS)
-    tool_node = ToolNode(ALL_TOOLS)
+    llm_with_tools = llm.bind_tools(tools)
+    tool_node = ToolNode(tools)
 
-    def agent_node(state: MessagesState) -> dict:
+    async def agent_node(state: MessagesState) -> dict:
         msgs = [{"role": "system", "content": SYSTEM_PROMPT}] + state["messages"]
-        return {"messages": [llm_with_tools.invoke(msgs)]}
+        return {"messages": [await llm_with_tools.ainvoke(msgs)]}
 
     g = StateGraph(MessagesState)
     g.add_node("agent", agent_node)
@@ -116,4 +121,55 @@ def build_graph():
     return g.compile(checkpointer=checkpointer), checkpointer
 
 
-APP, CHECKPOINTER = build_graph()
+# ---------------- 工具来源：优先 MCP，失败降级为进程内直连 ----------------
+
+_app = None
+_checkpointer: InMemorySaver | None = None
+_tool_source = "unset"
+
+
+def _direct_data_tools() -> list:
+    """进程内直连工具（MCP 不可用时的降级路径，同一份 odata 实现）。"""
+    return [
+        tool(odata.query_order, name="lookup_order", description="按订单号查询订单状态、购买时间、预计送达与实际送达时间。"),
+        tool(odata.query_order_items, name="lookup_order_items", description="查询订单里买了什么：商品类目、单价、运费、合计金额。"),
+        tool(odata.query_order_payment, name="lookup_order_payment", description="查询订单的支付方式、分期与支付金额。"),
+        tool(odata.query_order_review, name="lookup_order_review", description="查询客户对该订单的评价（1-5星及内容），处理投诉前先看。"),
+        tool(odata.is_late, name="check_delivery_late", description="判断订单是否超过预计送达日期仍未送达，返回是否超期和超期天数。"),
+    ]
+
+
+async def _load_data_tools() -> list:
+    """优先走 MCP 协议加载工具（app/mcp/server.py），失败则降级直连。"""
+    global _tool_source
+    try:
+        from langchain_mcp_adapters.client import MultiServerMCPClient
+
+        client = MultiServerMCPClient({
+            "retail-order-data": {
+                "command": sys.executable,
+                "args": ["-m", "app.mcp.server"],
+                "transport": "stdio",
+            }
+        })
+        tools = await client.get_tools()
+        _tool_source = "mcp"
+        return tools
+    except Exception as e:  # MCP 子进程失败不应拖垮主服务
+        print(f"[graph] MCP 工具加载失败，降级为进程内直连: {type(e).__name__}: {e}")
+        _tool_source = "direct"
+        return _direct_data_tools()
+
+
+async def get_app():
+    """惰性构建并缓存 Agent 图（首次调用时加载工具）。"""
+    global _app, _checkpointer
+    if _app is None:
+        data_tools = await _load_data_tools()
+        tools = data_tools + [create_refund_ticket]
+        _app, _checkpointer = build_graph(tools)
+    return _app
+
+
+def tool_source() -> str:
+    return _tool_source
