@@ -8,9 +8,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# ---- data & artifacts (large / private) ----
-data/raw/
-data/processed/
+# ---- data & artifacts (large / private; 均可用脚本重建) ----
+data/
 *.db
 *.sqlite3
 chroma_db/

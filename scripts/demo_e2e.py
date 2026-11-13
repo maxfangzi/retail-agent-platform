@@ -41,7 +41,6 @@ def main() -> None:
 
     # ③ Agent 工具调用（查真实订单）
     section("③ LangGraph Agent 查真实订单")
-    order_id = odata.query_order.__doc__  # noqa: F841
     demo_order = "99a478866da877444aa38b616f029de8"
     print(f"工具直查 {demo_order}:", odata.query_order(demo_order))
 
