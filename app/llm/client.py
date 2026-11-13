@@ -30,7 +30,7 @@ def chat(
 ) -> dict[str, Any]:
     """调用 Mistral chat completions，返回完整响应 dict。
 
-    tier: "fast"（mistral-small，便宜）| "premium"（mistral-large，更强）
+    tier: "fast"（mistral-small，最省）| "premium"（默认也是 small，可配成 large）
     """
     if not settings.mistral_api_key:
         raise LLMError("MISTRAL_API_KEY 未配置，请复制 .env.example 为 .env 并填写")

@@ -13,7 +13,9 @@ load_dotenv(BASE_DIR / ".env")
 class Settings(BaseSettings):
     # --- LLM（Mistral）---
     mistral_api_key: str = ""
-    llm_model_premium: str = "mistral-large-latest"
+    # 双档路由：fast 日常问答（最省），premium 只在需要强推理时显式指定。
+    # 默认两档都用 small 控制成本；预算充足可把 premium 换回 mistral-large-latest
+    llm_model_premium: str = "mistral-small-latest"
     llm_model_fast: str = "mistral-small-latest"
 
     # --- RAG ---
