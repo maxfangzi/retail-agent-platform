@@ -37,7 +37,7 @@ def main() -> None:
         # 2 RAG
         r = c.post("/rag/ask", json={"question": "退款政策是什么？"})
         body = r.json()
-        check("RAG 带出处", r.status_code == 200 and body.get("sources"), 
+        check("RAG 带出处", r.status_code == 200 and bool(body.get("sources")), 
               f"来源 {sorted({s['file'] for s in body.get('sources', [])})}")
 
         # 3 客服路由：真实订单查询
